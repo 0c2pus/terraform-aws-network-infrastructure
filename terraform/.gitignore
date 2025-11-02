@@ -1,0 +1,35 @@
+# Terraform files
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform.lock.hcl
+terraform.tfplan
+
+# Sensitive data
+terraform.tfvars
+*.auto.tfvars
+*.tfvars.json
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Crash log files
+crash.log
+crash.*.log
