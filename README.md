@@ -16,11 +16,9 @@ This project demonstrates secure, scalable AWS network infrastructure following 
 
 - Multi-tier network architecture with public/private subnet isolation
 - Modular, reusable Terraform code structure
-- High availability across multiple Availability Zones
+- High availability design considerations
 - Security-first approach with least privilege access
 - Infrastructure state management and change tracking
-
----
 
 ## Technical Stack
 
@@ -28,33 +26,54 @@ This project demonstrates secure, scalable AWS network infrastructure following 
 - **AWS Provider** ~> 5.0
 - **LocalStack** (AWS service emulation)
 - **Docker** (LocalStack runtime)
-- **Git** (version control)
+- **Git** (version control with Git Flow)
 
----
+## Current Architecture
+
+### Network Components
+
+**VPC:** `10.0.0.0/16`
+- DNS hostnames and resolution enabled
+- Isolated virtual network environment
+
+**Public Subnet:** `10.0.1.0/24`
+- Internet-facing resources
+- Auto-assign public IP addresses
+- Direct internet access via Internet Gateway
+
+**Private Subnet:** `10.0.2.0/24`
+- Protected backend resources
+- No public IP addresses
+- Outbound internet access via NAT Gateway
+
+**Connectivity:**
+- Internet Gateway for public subnet bidirectional internet access
+- NAT Gateway for private subnet outbound-only internet access
+- Route tables configured for proper traffic routing
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed network design documentation.
 
 ## Project Structure
 ```
-terraform-aws-project/
-├── docker-compose.yml       # LocalStack service configuration
-├── terraform/
-│   ├── main.tf             # Provider and core configuration
-│   ├── variables.tf        # Input variable definitions
-│   ├── outputs.tf          # Output value definitions
-│   └── terraform.tfvars    # Variable values (excluded from VCS)
-├── .gitignore              # VCS exclusions
-└── README.md               # Project documentation
+terraform-aws-network-infrastructure/
+├── ARCHITECTURE.md          # Detailed architecture documentation
+├── LICENSE                  # MIT License
+├── README.md               # This file
+├── docker-compose.yml      # LocalStack service configuration
+└── terraform/
+    ├── main.tf            # Core infrastructure resources
+    ├── variables.tf       # Input variable definitions
+    ├── outputs.tf         # Output value definitions
+    └── terraform.tfvars   # Variable values (excluded from VCS)
 ```
-
----
 
 ## Prerequisites
 
-- Docker Desktop
+- Docker Desktop (for LocalStack)
 - Terraform >= 1.0
 - Git >= 2.0
 - AWS CLI v2
-
----
+- awslocal (AWS CLI wrapper for LocalStack)
 
 ## Setup
 
@@ -65,29 +84,28 @@ sleep 15
 curl http://localhost:4566/_localstack/health
 ```
 
-### Initialize Terraform
+### Initialize and Deploy
 ```bash
 cd terraform
 terraform init
 terraform validate
-terraform plan
-```
-
----
-
-## Usage
-
-### Deploy Infrastructure
-```bash
-cd terraform
 terraform plan
 terraform apply
 ```
 
 ### Verify Deployment
 ```bash
+# View outputs
+terraform output
+
+# Verify VPC
 awslocal ec2 describe-vpcs
+
+# Verify subnets
 awslocal ec2 describe-subnets
+
+# Verify route tables
+awslocal ec2 describe-route-tables
 ```
 
 ### Destroy Infrastructure
@@ -96,7 +114,23 @@ cd terraform
 terraform destroy
 ```
 
----
+## Usage Examples
+
+### View Network Summary
+```bash
+terraform output network_summary
+```
+
+### List All Created Resources
+```bash
+terraform state list
+```
+
+### Inspect Specific Resource
+```bash
+terraform state show aws_vpc.main
+terraform state show aws_subnet.public
+```
 
 ## Security
 
@@ -104,24 +138,25 @@ terraform destroy
 
 - Dummy credentials used for LocalStack
 - State files excluded from version control
-- Sensitive variables excluded from version control
+- Sensitive variables excluded from VCS
+- Network isolation enforced through subnet design
 
 ### Production Considerations
 
-For production AWS deployment:
+When adapting for production AWS:
 
-- Remove LocalStack endpoint configuration
-- Configure IAM role-based authentication
-- Implement remote state backend with encryption
-- Enable state locking with DynamoDB
-- Store secrets in AWS Secrets Manager
-- Enable CloudTrail for audit logging
-
----
+1. Remove LocalStack endpoint configuration
+2. Configure IAM role-based authentication
+3. Implement remote state backend (S3 + DynamoDB)
+4. Enable state file encryption
+5. Use AWS Secrets Manager for sensitive data
+6. Deploy across multiple Availability Zones
+7. Implement VPC Flow Logs for network monitoring
+8. Configure Network ACLs for additional security layer
 
 ## Development Workflow
 
-This project follows Git Flow:
+This project follows Git Flow methodology:
 
 - `main` - production-ready code
 - `develop` - integration branch
@@ -129,45 +164,92 @@ This project follows Git Flow:
 
 ### Commit Convention
 ```
-feat: add new feature
+feat: new feature
 fix: bug fix
 docs: documentation changes
 refactor: code refactoring
-test: test additions or modifications
+test: test additions
+chore: maintenance tasks
 ```
 
----
-
-## Current Status
+## Project Status
 
 ### Completed
 
+**Week 1:**
 - LocalStack environment configuration
 - Terraform AWS provider setup
-- Project structure and documentation
+- Project structure and Git Flow
+- Professional documentation standards
+
+**Week 2:**
+- VPC creation with DNS support
+- Public subnet with Internet Gateway
+- Private subnet with NAT Gateway
+- Route table configuration
+- Network architecture documentation
 
 ### In Progress
 
-- VPC and subnet configuration
-- Internet Gateway and NAT Gateway
-- Route table configuration
+**Week 3:**
+- EC2 instance deployment
+- Security Group configuration
+- SSH access setup
+- Bastion host implementation
 
 ### Planned
 
-- EC2 instance provisioning
-- Security Group configuration
-- Application Load Balancer
+**Week 4:**
 - Code modularization
+- Application Load Balancer
+- Final architecture diagram
+- Complete documentation
+
+## Documentation
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed network design and components
+- [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/)
+- [AWS VPC Documentation](https://docs.aws.amazon.com/vpc/)
+- [LocalStack Documentation](https://docs.localstack.cloud/)
+
+## Testing
+
+Validate infrastructure after deployment:
+```bash
+# Terraform validation
+cd terraform
+terraform validate
+terraform plan
+
+# Network connectivity tests
+awslocal ec2 describe-vpcs --query 'Vpcs[*].[VpcId,CidrBlock]'
+awslocal ec2 describe-subnets --query 'Subnets[*].[SubnetId,CidrBlock,MapPublicIpOnLaunch]'
+awslocal ec2 describe-route-tables --query 'RouteTables[*].Routes'
+```
+
+## Cost Considerations
+
+### Development
+
+No costs - all resources run locally in LocalStack.
+
+### Production Deployment
+
+Estimated monthly AWS costs:
+- VPC, Subnets, Internet Gateway: Free
+- NAT Gateway: ~$32/month per AZ
+- Data transfer: Variable based on usage
 
 ## License
 
-MIT [LICENSE](LICENSE)
+MIT License - see [LICENSE](LICENSE) file for details.
 
 ## Author
 
-0c2pus  
-- GitHub: [0c2pus](https://github.com/0c2pus)
+GitHub: [0c2pus](https://github.com/0c2pus)
 
 ---
 
-Last updated: 2025-11-02
+**Project Status:** Active Development - Stage 2/4 Complete
+
+Last updated: 2025-11-03
