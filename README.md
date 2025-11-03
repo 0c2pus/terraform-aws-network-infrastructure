@@ -176,13 +176,13 @@ chore: maintenance tasks
 
 ### Completed
 
-**Week 1:**
+**Stage 1:**
 - LocalStack environment configuration
 - Terraform AWS provider setup
 - Project structure and Git Flow
 - Professional documentation standards
 
-**Week 2:**
+**Stage 2:**
 - VPC creation with DNS support
 - Public subnet with Internet Gateway
 - Private subnet with NAT Gateway
@@ -191,7 +191,7 @@ chore: maintenance tasks
 
 ### In Progress
 
-**Week 3:**
+**Stage 3:**
 - EC2 instance deployment
 - Security Group configuration
 - SSH access setup
@@ -199,7 +199,7 @@ chore: maintenance tasks
 
 ### Planned
 
-**Week 4:**
+**Stage 4:**
 - Code modularization
 - Application Load Balancer
 - Final architecture diagram
