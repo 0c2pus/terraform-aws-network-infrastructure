@@ -6,19 +6,18 @@
 
 Infrastructure as Code implementation of production-grade AWS network architecture using Terraform and LocalStack for local development.
 
----
-
 ## Overview
 
-This project demonstrates secure, scalable AWS network infrastructure following industry best practices. The infrastructure is developed and tested locally using LocalStack to eliminate cloud costs during development.
+This project demonstrates secure, scalable AWS network infrastructure following industry best practices. Infrastructure is developed and tested locally using LocalStack to eliminate cloud costs during development.
 
 ### Design Principles
 
 - Multi-tier network architecture with public/private subnet isolation
-- Modular, reusable Terraform code structure
-- High availability design considerations
-- Security-first approach with least privilege access
-- Infrastructure state management and change tracking
+- Bastion host pattern for secure SSH access
+- Principle of least privilege for security groups
+- Infrastructure as Code with validation and outputs
+- Git Flow methodology for version control
+- Comprehensive documentation and testing procedures
 
 ## Technical Stack
 
@@ -26,11 +25,11 @@ This project demonstrates secure, scalable AWS network infrastructure following 
 - **AWS Provider** ~> 5.0
 - **LocalStack** (AWS service emulation)
 - **Docker** (LocalStack runtime)
-- **Git** (version control with Git Flow)
+- **Git** with Git Flow (version control)
 
 ## Current Architecture
 
-### Network Components
+### Network Layer
 
 **VPC:** `10.0.0.0/16`
 - DNS hostnames and resolution enabled
@@ -46,25 +45,50 @@ This project demonstrates secure, scalable AWS network infrastructure following 
 - No public IP addresses
 - Outbound internet access via NAT Gateway
 
-**Connectivity:**
-- Internet Gateway for public subnet bidirectional internet access
-- NAT Gateway for private subnet outbound-only internet access
+**Gateways:**
+- Internet Gateway for public subnet bidirectional traffic
+- NAT Gateway for private subnet outbound-only traffic
 - Route tables configured for proper traffic routing
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed network design documentation.
+### Compute Layer
+
+**Bastion Host (Public Subnet):**
+- Ubuntu 22.04 LTS on t2.micro
+- SSH access restricted to specific IP address
+- Jump host for accessing private resources
+
+**Application Server (Private Subnet):**
+- Ubuntu 22.04 LTS on t2.micro
+- SSH access only from bastion host
+- Pre-installed with nginx for testing
+
+### Security
+
+**Security Groups:**
+- Bastion: SSH from allowed IP only
+- Application: SSH from bastion only, traffic from public subnet
+- No direct internet SSH access to private resources
+
+**SSH Authentication:**
+- ED25519 key pair
+- Key-based authentication only
+- Private key stored securely locally
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed design documentation.
 
 ## Project Structure
 ```
 terraform-aws-network-infrastructure/
 ├── ARCHITECTURE.md          # Detailed architecture documentation
-├── LICENSE                  # MIT License
-├── README.md               # This file
-├── docker-compose.yml      # LocalStack service configuration
+├── TESTING.md              # Infrastructure testing procedures
+├── LICENSE                 # MIT License
+├── README.md              # This file
+├── docker-compose.yml     # LocalStack service configuration
 └── terraform/
-    ├── main.tf            # Core infrastructure resources
-    ├── variables.tf       # Input variable definitions
-    ├── outputs.tf         # Output value definitions
-    └── terraform.tfvars   # Variable values (excluded from VCS)
+    ├── main.tf           # Core infrastructure resources
+    ├── variables.tf      # Input variable definitions
+    ├── outputs.tf        # Output value definitions
+    └── terraform.tfvars  # Variable values (excluded from VCS)
 ```
 
 ## Prerequisites
@@ -84,7 +108,23 @@ sleep 15
 curl http://localhost:4566/_localstack/health
 ```
 
-### Initialize and Deploy
+### Generate SSH Key
+```bash
+ssh-keygen -t ed25519 -C "terraform-aws-project" -f ~/.ssh/terraform-project/terraform-key -N ""
+chmod 600 ~/.ssh/terraform-project/terraform-key
+```
+
+### Configure Terraform Variables
+
+Create `terraform/terraform.tfvars`:
+```hcl
+ssh_public_key   = "ssh-ed25519 AAAA... your-public-key"
+allowed_ssh_cidr = "YOUR_IP/32"
+```
+
+Get your public IP: `curl -4 ifconfig.me`
+
+### Deploy Infrastructure
 ```bash
 cd terraform
 terraform init
@@ -93,66 +133,87 @@ terraform plan
 terraform apply
 ```
 
-### Verify Deployment
+## Usage
+
+### View Infrastructure Outputs
 ```bash
-# View outputs
 terraform output
-
-# Verify VPC
-awslocal ec2 describe-vpcs
-
-# Verify subnets
-awslocal ec2 describe-subnets
-
-# Verify route tables
-awslocal ec2 describe-route-tables
+terraform output network_summary
+terraform output compute_summary
 ```
+
+### SSH Access
+
+#### Connect to Bastion
+```bash
+BASTION_IP=$(terraform output -raw bastion_public_ip)
+ssh -i ~/.ssh/terraform-project/terraform-key ubuntu@${BASTION_IP}
+```
+
+#### Connect to Application Server
+```bash
+APP_IP=$(terraform output -raw application_private_ip)
+ssh -i ~/.ssh/terraform-project/terraform-key -J ubuntu@${BASTION_IP} ubuntu@${APP_IP}
+```
+
+Or use the pre-formatted command:
+```bash
+terraform output -raw ssh_connection_application | bash
+```
+
+### Verify Resources
+```bash
+awslocal ec2 describe-vpcs
+awslocal ec2 describe-subnets
+awslocal ec2 describe-instances
+awslocal ec2 describe-security-groups
+```
+
+See [TESTING.md](TESTING.md) for comprehensive testing procedures.
 
 ### Destroy Infrastructure
 ```bash
-cd terraform
 terraform destroy
-```
-
-## Usage Examples
-
-### View Network Summary
-```bash
-terraform output network_summary
-```
-
-### List All Created Resources
-```bash
-terraform state list
-```
-
-### Inspect Specific Resource
-```bash
-terraform state show aws_vpc.main
-terraform state show aws_subnet.public
 ```
 
 ## Security
 
 ### Local Development
 
-- Dummy credentials used for LocalStack
+- Dummy AWS credentials for LocalStack
 - State files excluded from version control
 - Sensitive variables excluded from VCS
-- Network isolation enforced through subnet design
+- SSH private keys stored locally only
+- Network isolation enforced through design
 
 ### Production Considerations
 
-When adapting for production AWS:
+For production AWS deployment:
 
-1. Remove LocalStack endpoint configuration
-2. Configure IAM role-based authentication
-3. Implement remote state backend (S3 + DynamoDB)
-4. Enable state file encryption
-5. Use AWS Secrets Manager for sensitive data
-6. Deploy across multiple Availability Zones
-7. Implement VPC Flow Logs for network monitoring
-8. Configure Network ACLs for additional security layer
+**Authentication:**
+- Remove LocalStack endpoint configuration
+- Configure IAM role-based authentication
+- Use AWS Secrets Manager for sensitive data
+
+**State Management:**
+- Implement remote state backend (S3 + DynamoDB)
+- Enable state file encryption
+- Configure state locking
+
+**Networking:**
+- Deploy across multiple Availability Zones
+- Implement VPC Flow Logs
+- Configure Network ACLs
+
+**Monitoring:**
+- Enable CloudWatch monitoring
+- Configure CloudTrail for audit logging
+- Set up SNS alerts for critical events
+
+**SSH Access:**
+- Update allowed_ssh_cidr to bastion public IP
+- Consider AWS Systems Manager Session Manager
+- Implement SSH certificate authority
 
 ## Development Workflow
 
@@ -164,7 +225,7 @@ This project follows Git Flow methodology:
 
 ### Commit Convention
 ```
-feat: new feature
+feat: new feature implementation
 fix: bug fix
 docs: documentation changes
 refactor: code refactoring
@@ -172,60 +233,65 @@ test: test additions
 chore: maintenance tasks
 ```
 
-## Project Status
+### Branching Strategy
+```bash
+# Create feature branch from develop
+git checkout develop
+git pull origin develop
+git checkout -b feature/stage-name
+
+# Work, commit, push
+git add .
+git commit -m "feat: description"
+git push origin feature/stage-name
+
+# Merge via pull request
+git checkout develop
+git merge feature/stage-name --no-ff
+git push origin develop
+git branch -d feature/stage-name
+```
+
+## Project Stages
 
 ### Completed
 
-**Stage 1:**
+**Stage 1: Foundation**
 - LocalStack environment configuration
 - Terraform AWS provider setup
-- Project structure and Git Flow
-- Professional documentation standards
+- Git repository structure
+- Documentation standards
 
-**Stage 2:**
-- VPC creation with DNS support
-- Public subnet with Internet Gateway
-- Private subnet with NAT Gateway
+**Stage 2: Network Infrastructure**
+- VPC with DNS support
+- Public and private subnets
+- Internet Gateway and NAT Gateway
 - Route table configuration
 - Network architecture documentation
 
-### In Progress
-
-**Stage 3:**
-- EC2 instance deployment
-- Security Group configuration
-- SSH access setup
+**Stage 3: Compute and Security**
+- EC2 instances (bastion and application)
+- Security Groups with least privilege
+- SSH key pair management
 - Bastion host implementation
+- Security testing procedures
 
 ### Planned
 
-**Stage 4:**
-- Code modularization
-- Application Load Balancer
-- Final architecture diagram
-- Complete documentation
+**Stage 4: Modularization and Finalization**
+- Terraform code modularization
+- Reusable modules structure
+- Application Load Balancer (optional)
+- Architecture diagram
+- Final documentation polish
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed network design and components
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed infrastructure design
+- [TESTING.md](TESTING.md) - Testing procedures and validation
 - [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/)
 - [AWS VPC Documentation](https://docs.aws.amazon.com/vpc/)
 - [LocalStack Documentation](https://docs.localstack.cloud/)
-
-## Testing
-
-Validate infrastructure after deployment:
-```bash
-# Terraform validation
-cd terraform
-terraform validate
-terraform plan
-
-# Network connectivity tests
-awslocal ec2 describe-vpcs --query 'Vpcs[*].[VpcId,CidrBlock]'
-awslocal ec2 describe-subnets --query 'Subnets[*].[SubnetId,CidrBlock,MapPublicIpOnLaunch]'
-awslocal ec2 describe-route-tables --query 'RouteTables[*].Routes'
-```
 
 ## Cost Considerations
 
@@ -236,9 +302,32 @@ No costs - all resources run locally in LocalStack.
 ### Production Deployment
 
 Estimated monthly AWS costs:
-- VPC, Subnets, Internet Gateway: Free
+
+**Network:**
+- VPC, Subnets, Route Tables, Internet Gateway: Free
 - NAT Gateway: ~$32/month per AZ
-- Data transfer: Variable based on usage
+- Elastic IP: Free when attached
+
+**Compute:**
+- t2.micro instances: ~$8/month each
+- Total for 2 instances: ~$16/month
+
+**Estimated Total: ~$48/month**
+
+**Optimization strategies:**
+- Use t3.micro for better price/performance
+- Single NAT Gateway for non-production
+- Reserved Instances (up to 70% savings)
+- Auto Scaling for variable workloads
+
+## Known LocalStack Limitations
+
+- SSH connectivity to EC2 not fully emulated
+- Console output may not be available
+- User data scripts may not execute fully
+- AMI catalog not available (using fake AMI ID)
+
+These limitations do not affect Terraform code quality or production AWS deployment.
 
 ## License
 
@@ -250,6 +339,6 @@ GitHub: [0c2pus](https://github.com/0c2pus)
 
 ---
 
-**Project Status:** Active Development - Stage 2/4 Complete
+**Project Status:** Active Development - Stage 3/4 Complete
 
-Last updated: 2025-11-03
+Last updated: 2025-11-04

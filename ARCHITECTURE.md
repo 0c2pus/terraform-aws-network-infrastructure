@@ -1,219 +1,277 @@
-# Network Architecture Documentation
+## Compute Resources
 
-## Overview
+### EC2 Instances
 
-This document describes the network architecture implemented in this project.
+#### Bastion Host
 
-## VPC Architecture
-
-### CIDR Allocation
-```
-VPC:             10.0.0.0/16    (65,536 IP addresses)
-├── Public:      10.0.1.0/24    (256 IP addresses)
-├── Private:     10.0.2.0/24    (256 IP addresses)
-└── Reserved:    10.0.3.0/24+   (for future expansion)
-```
-
-### Subnet Design
-
-#### Public Subnet (10.0.1.0/24)
-
-**Purpose:** Resources that require direct internet access
-
-**Characteristics:**
-- Internet-facing resources (web servers, load balancers)
-- Auto-assign public IP addresses
-- Direct route to Internet Gateway
-- NAT Gateway deployed here
-
-**Route Table:**
-- `10.0.0.0/16` → local (VPC internal traffic)
-- `0.0.0.0/0` → Internet Gateway (all external traffic)
-
-#### Private Subnet (10.0.2.0/24)
-
-**Purpose:** Protected resources without direct internet exposure
-
-**Characteristics:**
-- Backend services, databases, internal applications
-- No public IP addresses
-- Outbound internet access via NAT Gateway
-- Cannot receive inbound traffic from internet
-
-**Route Table:**
-- `10.0.0.0/16` → local (VPC internal traffic)
-- `0.0.0.0/0` → NAT Gateway (outbound only)
-
-## Network Components
-
-### VPC (Virtual Private Cloud)
+**Purpose:** Secure entry point for SSH access to private resources
 
 **Configuration:**
-- CIDR: 10.0.0.0/16
-- DNS Resolution: Enabled
-- DNS Hostnames: Enabled
+- Location: Public subnet (10.0.1.0/24)
+- Instance Type: t2.micro
+- Operating System: Ubuntu 22.04 LTS
+- Public IP: Auto-assigned
+- Private IP: Dynamic within subnet range
 
-**Purpose:** Isolated virtual network in AWS cloud
+**Security:**
+- Security Group allows SSH (port 22) only from specified IP address
+- Acts as jump host for accessing private subnet resources
+- SSH key authentication required
 
-### Internet Gateway (IGW)
+**Use Cases:**
+- SSH access to private subnet instances
+- Administrative tasks requiring secure shell access
+- Monitoring and troubleshooting
 
-**Purpose:** Enable communication between VPC and internet
+#### Application Server
 
-**Functionality:**
-- Provides target for internet-routable traffic
-- Performs NAT for instances with public IP addresses
-- Attached to VPC
+**Purpose:** Backend application hosting in isolated environment
 
-### NAT Gateway
+**Configuration:**
+- Location: Private subnet (10.0.2.0/24)
+- Instance Type: t2.micro
+- Operating System: Ubuntu 22.04 LTS
+- Public IP: None
+- Private IP: Dynamic within subnet range
 
-**Purpose:** Enable private subnet instances to access internet
+**Security:**
+- No direct internet access for inbound traffic
+- SSH access only from bastion host
+- Outbound internet access via NAT Gateway
 
-**Functionality:**
-- Allows outbound internet traffic from private subnet
-- Blocks inbound traffic from internet
-- Deployed in public subnet
-- Uses Elastic IP address
+**Pre-installed Software:**
+- nginx (web server for testing)
+- Standard system utilities (htop, curl, wget, net-tools)
 
-**Deployment:**
-- Location: Public subnet
-- Availability: Single AZ (can be expanded for HA)
+### Security Groups
 
-### Route Tables
+Security Groups function as virtual firewalls controlling inbound and outbound traffic.
 
-#### Public Route Table
+#### Bastion Security Group
 
-Associated with public subnet.
-
-**Routes:**
-- Local route (VPC CIDR) - automatic
-- Default route (0.0.0.0/0) → Internet Gateway
-
-#### Private Route Table
-
-Associated with private subnet.
-
-**Routes:**
-- Local route (VPC CIDR) - automatic
-- Default route (0.0.0.0/0) → NAT Gateway
-
-## Traffic Flow Examples
-
-### Public Subnet Instance to Internet
+**Inbound Rules (Ingress):**
 ```
-Instance (10.0.1.x) → Internet Gateway → Internet
+Protocol: TCP
+Port: 22 (SSH)
+Source: Specified IP address/CIDR only
+Description: SSH access from trusted location
 ```
 
-### Internet to Public Subnet Instance
+**Outbound Rules (Egress):**
 ```
-Internet → Internet Gateway → Instance (10.0.1.x)
-```
-
-### Private Subnet Instance to Internet
-```
-Instance (10.0.2.x) → NAT Gateway (10.0.1.x) → Internet Gateway → Internet
+Protocol: All
+Port: All
+Destination: 0.0.0.0/0
+Description: Allow all outbound traffic
 ```
 
-### Internet to Private Subnet Instance
+**Design Rationale:**
+- Restricts SSH access to known IP addresses
+- Prevents unauthorized access attempts
+- Allows bastion to reach any destination for administrative tasks
+
+#### Application Security Group
+
+**Inbound Rules (Ingress):**
 ```
-Blocked - No inbound route from Internet Gateway to private subnet
+1. Protocol: TCP
+   Port: 22 (SSH)
+   Source: Bastion Security Group
+   Description: SSH access from bastion only
+
+2. Protocol: All
+   Port: All
+   Source: 10.0.1.0/24 (Public subnet)
+   Description: Application traffic from public subnet
 ```
 
-### Public to Private Communication
+**Outbound Rules (Egress):**
 ```
-Public Instance (10.0.1.x) → Local Route → Private Instance (10.0.2.x)
+Protocol: All
+Port: All
+Destination: 0.0.0.0/0
+Description: Allow all outbound traffic
 ```
 
-## Security Considerations
+**Design Rationale:**
+- No direct internet SSH access
+- Only bastion can initiate SSH connections
+- Public subnet can reach application (for load balancer or API gateway)
+- Application can reach external services via NAT Gateway
 
-### Network Isolation
+### SSH Key Management
 
-- Private subnet has no direct internet access
-- All inbound traffic to private subnet must originate from within VPC
-- Principle of least privilege applied to network design
+**Key Pair Configuration:**
+- Algorithm: ED25519 (modern, secure)
+- Storage: `~/.ssh/terraform-project/terraform-key`
+- Permissions: 600 (read/write owner only)
+- Public key registered in AWS Key Pairs
 
-### High Availability Considerations
+**Usage:**
+```bash
+# Connect to bastion
+ssh -i ~/.ssh/terraform-project/terraform-key ubuntu@<bastion-public-ip>
 
-Current implementation uses single Availability Zone.
+# Connect to application via bastion (ProxyJump)
+ssh -i ~/.ssh/terraform-project/terraform-key -J ubuntu@<bastion-public-ip> ubuntu@<app-private-ip>
+```
 
-**Production recommendations:**
-- Deploy subnets across multiple AZs
-- Use multiple NAT Gateways (one per AZ)
-- Implement cross-AZ load balancing
+## Security Patterns
 
-### Scalability
+### Bastion Host Pattern
 
-**Current capacity:**
-- Public subnet: 251 usable IPs (256 - 5 AWS reserved)
-- Private subnet: 251 usable IPs
+**Implementation:**
+```
+Internet → Bastion (Public Subnet) → Application (Private Subnet)
+```
 
-**Expansion options:**
-- Additional subnets: 10.0.3.0/24, 10.0.4.0/24, etc.
-- VPC supports up to 256 subnets
-- Can be expanded to multi-AZ without CIDR changes
+**Benefits:**
+- Single point of entry for SSH access
+- Centralized access control and logging
+- Private resources remain isolated from internet
+- Easier to monitor and audit access
 
-## Resource Tagging Strategy
+**Best Practices Applied:**
+- Restrict bastion SSH access by source IP
+- Use SSH keys instead of passwords
+- Implement jump host configuration with ProxyJump
+- Keep bastion minimal (no application workloads)
 
-All resources tagged with:
-- `Project`: Project identifier
-- `Environment`: dev/staging/prod
-- `ManagedBy`: Terraform
-- `Name`: Human-readable resource name
-- `Type`: Resource type where applicable
+### Network Segmentation
 
-## Cost Optimization Notes
+**Public Subnet (DMZ):**
+- Internet-facing resources only
+- Bastion host
+- Future: Load balancers, API gateways
+
+**Private Subnet (Secure Zone):**
+- Application servers
+- Databases (future)
+- Internal services
+- No direct internet exposure
+
+### Least Privilege Access
+
+**Principles:**
+- Application server: No inbound internet access
+- Bastion: SSH only, no application services
+- Security Groups: Minimum required ports only
+- Source restrictions: Specific IPs/Security Groups only
+
+## Traffic Flow Examples (Updated)
+
+### SSH to Bastion
+```
+Admin (Allowed IP) → Internet → Internet Gateway → Bastion (Public Subnet)
+```
+
+Security: Bastion Security Group checks source IP
+
+### SSH to Application Server
+```
+Admin → Bastion (ProxyJump) → Application (Private Subnet)
+```
+
+Security:
+1. Bastion Security Group allows admin's IP
+2. Application Security Group allows bastion's Security Group
+
+### Application Outbound Traffic
+```
+Application (Private Subnet) → NAT Gateway (Public Subnet) → Internet Gateway → Internet
+```
+
+Use Cases:
+- Software updates (apt update)
+- External API calls
+- Database connections to external services
+
+### Application Inbound from Public Resources
+```
+Public Subnet Resource → Application Security Group → Application (Private Subnet)
+```
+
+Use Cases:
+- Load balancer health checks
+- API Gateway requests
+- Future public-facing services
+
+## Updated Resource Summary
+
+### Network Layer (Stage 2)
+- 1 VPC (10.0.0.0/16)
+- 2 Subnets (public/private)
+- 1 Internet Gateway
+- 1 NAT Gateway
+- 1 Elastic IP
+- 2 Route Tables
+- 2 Route Table Associations
+
+### Compute and Security Layer (Stage 3)
+- 2 EC2 Instances (bastion/application)
+- 2 Security Groups
+- 1 SSH Key Pair
+
+**Total Managed Resources:** 15
+
+## Cost Optimization Notes (Updated)
 
 ### LocalStack Development
 
-No AWS costs during development - all resources run locally.
+No costs - all resources run locally.
 
-### Production Deployment Costs
+### Production AWS Deployment
 
-Estimated monthly costs (AWS):
-- VPC: Free
-- Subnets: Free
+**Monthly estimates:**
+
+Network:
+- VPC, Subnets, Route Tables: Free
 - Internet Gateway: Free
-- NAT Gateway: ~$32/month (per AZ)
-- Elastic IP: Free (when attached to running instance)
+- NAT Gateway: ~$32/month per AZ
+- Elastic IP: Free (when attached)
+
+Compute:
+- t2.micro instances: ~$8/month each (~$16 for both)
 - Data transfer: Variable
 
-**Cost optimization recommendations:**
-- Use single NAT Gateway for non-production
-- Consider NAT Instances for very low traffic
-- Monitor data transfer costs
+**Total estimated: ~$48/month**
 
-## Maintenance and Operations
+**Optimization strategies:**
+- Use t3.micro for better performance/price ratio
+- Single NAT Gateway for dev/staging
+- Reserved Instances for production (up to 70% savings)
+- Auto Scaling for variable workloads
+- Spot Instances for non-critical workloads
 
-### State Management
+## Testing Checklist (Updated)
 
-- Terraform state stored locally (development)
-- Production should use remote state (S3 + DynamoDB)
+Infrastructure validation:
 
-### Updates and Changes
-
-All infrastructure changes managed through:
-1. Feature branch creation
-2. Terraform plan review
-3. Pull request process
-4. Merge to develop
-5. Deploy to production (from main)
-
-## Testing Checklist
-
-Verify after deployment:
+Network:
 - [ ] VPC created with correct CIDR
-- [ ] Both subnets created in correct AZ
-- [ ] Internet Gateway attached to VPC
-- [ ] NAT Gateway in public subnet with Elastic IP
+- [ ] Subnets in correct AZs
+- [ ] Internet Gateway attached
+- [ ] NAT Gateway operational
 - [ ] Route tables configured correctly
-- [ ] Route table associations correct
-- [ ] All resources properly tagged
 
-## References
+Compute:
+- [ ] EC2 instances running
+- [ ] Bastion has public IP
+- [ ] Application has only private IP
+- [ ] SSH key pair registered
 
-- AWS VPC Documentation: https://docs.aws.amazon.com/vpc/
-- Terraform AWS Provider: https://registry.terraform.io/providers/hashicorp/aws/
-- Network CIDR Calculator: https://www.subnet-calculator.com/
+Security:
+- [ ] Security Groups created
+- [ ] Bastion SG allows SSH from allowed IP only
+- [ ] Application SG allows SSH from bastion only
+- [ ] No security group allows 0.0.0.0/0 SSH access
+
+Connectivity:
+- [ ] SSH to bastion successful
+- [ ] SSH to application via bastion successful
+- [ ] Application can reach internet (via NAT)
+- [ ] Application cannot be reached from internet directly
 
 ---
 
-Last updated: 2025-11-03
+Last updated: 2025-11-04 (Stage 3 complete)

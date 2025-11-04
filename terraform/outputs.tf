@@ -113,3 +113,75 @@ output "network_summary" {
     availability_zone = aws_subnet.public.availability_zone
   }
 }
+
+# ------------------------------------------------------------------------------
+# Security Groups
+# ------------------------------------------------------------------------------
+
+output "bastion_security_group_id" {
+  description = "ID of the bastion security group"
+  value       = aws_security_group.bastion.id
+}
+
+output "application_security_group_id" {
+  description = "ID of the application security group"
+  value       = aws_security_group.application.id
+}
+
+# ------------------------------------------------------------------------------
+# EC2 Instances
+# ------------------------------------------------------------------------------
+
+output "bastion_instance_id" {
+  description = "ID of the bastion instance"
+  value       = aws_instance.bastion.id
+}
+
+output "bastion_public_ip" {
+  description = "Public IP of the bastion instance"
+  value       = aws_instance.bastion.public_ip
+}
+
+output "bastion_private_ip" {
+  description = "Private IP of the bastion instance"
+  value       = aws_instance.bastion.private_ip
+}
+
+output "application_instance_id" {
+  description = "ID of the application instance"
+  value       = aws_instance.application.id
+}
+
+output "application_private_ip" {
+  description = "Private IP of the application instance"
+  value       = aws_instance.application.private_ip
+}
+
+# ------------------------------------------------------------------------------
+# SSH Connection Information
+# ------------------------------------------------------------------------------
+
+output "ssh_connection_bastion" {
+  description = "SSH command to connect to bastion host"
+  value       = "ssh -i ~/.ssh/terraform-project/terraform-key ubuntu@${aws_instance.bastion.public_ip}"
+}
+
+output "ssh_connection_application" {
+  description = "SSH command to connect to application server via bastion"
+  value       = "ssh -i ~/.ssh/terraform-project/terraform-key -J ubuntu@${aws_instance.bastion.public_ip} ubuntu@${aws_instance.application.private_ip}"
+}
+
+# ------------------------------------------------------------------------------
+# Compute Summary
+# ------------------------------------------------------------------------------
+
+output "compute_summary" {
+  description = "Summary of compute resources"
+  value = {
+    bastion_public_ip      = aws_instance.bastion.public_ip
+    bastion_private_ip     = aws_instance.bastion.private_ip
+    application_private_ip = aws_instance.application.private_ip
+    key_pair_name          = aws_key_pair.main.key_name
+    ami_id                 = local.ami_id
+  }
+}

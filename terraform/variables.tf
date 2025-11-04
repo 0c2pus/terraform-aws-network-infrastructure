@@ -78,7 +78,7 @@ variable "private_subnet_cidr" {
 }
 
 variable "availability_zone_index" {
-  description = "Index of availability zone to use (0 = first AZ)"
+  description = "Index of availability zone to use"
   type        = number
   default     = 0
 
@@ -98,6 +98,43 @@ variable "enable_dns_support" {
   description = "Enable DNS support in VPC"
   type        = bool
   default     = true
+}
+
+# ------------------------------------------------------------------------------
+# Compute Configuration
+# ------------------------------------------------------------------------------
+
+variable "ssh_public_key" {
+  description = "SSH public key for EC2 instance access"
+  type        = string
+  sensitive   = true
+
+  validation {
+    condition     = can(regex("^ssh-(rsa|ed25519|ecdsa)", var.ssh_public_key))
+    error_message = "SSH public key must be in valid format (ssh-rsa, ssh-ed25519, or ssh-ecdsa)."
+  }
+}
+
+variable "bastion_instance_type" {
+  description = "Instance type for bastion host"
+  type        = string
+  default     = "t2.micro"
+}
+
+variable "app_instance_type" {
+  description = "Instance type for application server"
+  type        = string
+  default     = "t2.micro"
+}
+
+variable "allowed_ssh_cidr" {
+  description = "CIDR block allowed to SSH to bastion host"
+  type        = string
+
+  validation {
+    condition     = can(cidrhost(var.allowed_ssh_cidr, 0))
+    error_message = "Allowed SSH CIDR must be a valid IPv4 CIDR block."
+  }
 }
 
 # ------------------------------------------------------------------------------
